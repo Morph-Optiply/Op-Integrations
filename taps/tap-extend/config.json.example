@@ -1,0 +1,8 @@
+{
+  "api_url": "https://s05.extend.se/RESTAPI",
+  "client": "MAXGAMING",
+  "username": "your-username",
+  "password": "your-password",
+  "start_date": "2024-01-01T00:00:00Z",
+  "warehouse_codes": ["MAXGAMING", "MAXGAMING2"]
+}
