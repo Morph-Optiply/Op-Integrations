@@ -489,18 +489,23 @@ class ProductAvailabilityStream(ExtendStream):
 
     name = "product_availability"
     primary_keys = ["productNumber", "warehouse"]
-    replication_key = "modifiedDate"
+    replication_key = "changeDate"
     replication_method = "INCREMENTAL"
 
     schema = th.PropertiesList(
         th.Property("productNumber", th.StringType),
         th.Property("warehouse", th.StringType),
-        th.Property("availableBalance", th.NumberType),
+        th.Property("warehouseName", th.StringType),
         th.Property("physicalBalance", th.NumberType),
-        th.Property("reservedBalance", th.NumberType),
-        th.Property("incomingQuantity", th.NumberType),
+        th.Property("availableBalanceNow", th.NumberType),
+        th.Property("blockedBalance", th.NumberType),
+        th.Property("orderedQuantity", th.NumberType),
         th.Property("nextReceivingDate", th.DateTimeType),
-        th.Property("modifiedDate", th.DateTimeType),
+        th.Property("quantityOnNextReceiving", th.NumberType),
+        th.Property("totalExpectedReceivingFromPurchase", th.NumberType),
+        th.Property("totalExpectedReceivingFromWarehouseTransfer", th.NumberType),
+        th.Property("totalExpectedReceivingFromReturn", th.NumberType),
+        th.Property("changeDate", th.DateTimeType),
     ).to_dict()
 
     def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
@@ -520,13 +525,8 @@ class ProductAvailabilityStream(ExtendStream):
                 params={**params_base, "pageNumber": page},
             ).json()
 
-            # Response may be a list or wrapped in a dict
-            if isinstance(data, list):
-                items = data
-                pagination = {}
-            else:
-                items = data.get("productAvailabilityList", data.get("ProductAvailabilityList", []))
-                pagination = data.get("paginationInfo", {})
+            items = data.get("productAvailabilityList", [])
+            pagination = data.get("paginationInfo", {})
 
             if not items:
                 break
@@ -539,19 +539,21 @@ class ProductAvailabilityStream(ExtendStream):
                 yield {
                     "productNumber": str(item.get("productNumber") or ""),
                     "warehouse": wh,
-                    "availableBalance": item.get("availableBalance"),
+                    "warehouseName": item.get("warehouseName"),
                     "physicalBalance": item.get("physicalBalance"),
-                    "reservedBalance": item.get("reservedBalance"),
-                    "incomingQuantity": item.get("incomingQuantity"),
+                    "availableBalanceNow": item.get("availableBalanceNow"),
+                    "blockedBalance": item.get("blockedBalance"),
+                    "orderedQuantity": item.get("orderedQuantity"),
                     "nextReceivingDate": item.get("nextReceivingDate"),
-                    "modifiedDate": item.get("modifiedDate"),
+                    "quantityOnNextReceiving": item.get("quantityOnNextReceiving"),
+                    "totalExpectedReceivingFromPurchase": item.get("totalExpectedReceivingFromPurchase"),
+                    "totalExpectedReceivingFromWarehouseTransfer": item.get("totalExpectedReceivingFromWarehouseTransfer"),
+                    "totalExpectedReceivingFromReturn": item.get("totalExpectedReceivingFromReturn"),
+                    "changeDate": item.get("changeDate"),
                 }
 
             total_pages = pagination.get("totalPages", 0)
-            if total_pages and page >= total_pages:
-                break
-            # If no pagination info (flat list), check if we got a full page
-            if not total_pages and len(items) < 100:
+            if page >= total_pages:
                 break
             page += 1
 
