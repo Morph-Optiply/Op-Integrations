@@ -2,9 +2,10 @@
 
 Streams:
   - SuppliersStream:                  GET /Supplier                  (FULL_TABLE)
-  - SupplierAgreementsStream:         GET /SupplierAgreement         (FULL_TABLE)
+  - SupplierAgreementsStream:         GET /SupplierAgreement         (FULL_TABLE, active=true)
   - ProductSupplierAgreementsStream:  GET /ProductSupplierAgreements (FULL_TABLE)
   - ProductsStream:                   GET /Products                  (INCREMENTAL, modifiedDateFrom)
+  - ProductAvailabilityStream:        GET /ProductAvailability       (INCREMENTAL, modifiedDateFrom)
   - CustomerOrdersStream:             GET /CustomerOrders            (INCREMENTAL, modifiedDateFrom)
   - PurchaseOrdersStream:             GET /PurchaseOrders            (INCREMENTAL, createDateFrom)
 
@@ -12,7 +13,7 @@ All streams share ExtendStream base class for auth/HTTP/state handling.
 
 Pagination:
   - Products, CustomerOrders: pageCount + pageOffset
-  - Supplier, SupplierAgreement, ProductSupplierAgreements, PurchaseOrders: pageNumber (1-based)
+  - Supplier, SupplierAgreement, ProductSupplierAgreements, PurchaseOrders, ProductAvailability: pageNumber (1-based)
 """
 
 from __future__ import annotations
@@ -191,6 +192,8 @@ class SupplierAgreementsStream(ExtendStream):
     endpoint — only by GET /SupplierAgreement/{id}. Omitted here to avoid
     525 extra detail calls. Add if the ETL needs the company-level grouping.
 
+    Filters active=true per Xavier's requirements (2026-03-06 email).
+
     Schema from SupplierAgreementListItem definition.
     FULL_TABLE — no change-date filter available on this endpoint.
     Pagination: pageNumber (1-based).
@@ -227,7 +230,8 @@ class SupplierAgreementsStream(ExtendStream):
         page = 1
         while True:
             data = self._request(
-                f"{self.base_url}/SupplierAgreement", params={"pageNumber": page}
+                f"{self.base_url}/SupplierAgreement",
+                params={"pageNumber": page, "active": "true"},
             ).json()
             items = data.get("SupplierAgreementList", [])
             pagination = data.get("paginationInfo", {})
@@ -463,6 +467,93 @@ class ProductsStream(ExtendStream):
         for pn, record in seen.items():
             record["warehouse_stock"] = json.dumps(stock_map.get(pn, []))
             yield record
+
+
+# ---------------------------------------------------------------------------
+# ProductAvailabilityStream  —  GET /ProductAvailability
+# ---------------------------------------------------------------------------
+
+
+class ProductAvailabilityStream(ExtendStream):
+    """Extend Commerce Product Availability (stock per product/warehouse).
+
+    Separate endpoint from Products — provides availability including
+    incoming stock and next receiving dates. One row per product/warehouse.
+
+    Per Xavier's requirements (2026-03-06 email): stocks come from this
+    endpoint, not from the Products list response.
+
+    Incremental via modifiedDateFrom.
+    Pagination: pageNumber (1-based).
+    """
+
+    name = "product_availability"
+    primary_keys = ["productNumber", "warehouse"]
+    replication_key = "modifiedDate"
+    replication_method = "INCREMENTAL"
+
+    schema = th.PropertiesList(
+        th.Property("productNumber", th.StringType),
+        th.Property("warehouse", th.StringType),
+        th.Property("availableBalance", th.NumberType),
+        th.Property("physicalBalance", th.NumberType),
+        th.Property("reservedBalance", th.NumberType),
+        th.Property("incomingQuantity", th.NumberType),
+        th.Property("nextReceivingDate", th.DateTimeType),
+        th.Property("modifiedDate", th.DateTimeType),
+    ).to_dict()
+
+    def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
+        warehouse_codes = self.config.get("warehouse_codes")
+
+        start_replication = self.get_starting_replication_key_value(context)
+        params_base: dict[str, Any] = {}
+        if start_replication:
+            params_base["modifiedDateFrom"] = str(start_replication)
+        elif self.config.get("start_date"):
+            params_base["modifiedDateFrom"] = str(self.config["start_date"])
+
+        page = 1
+        while True:
+            data = self._request(
+                f"{self.base_url}/ProductAvailability",
+                params={**params_base, "pageNumber": page},
+            ).json()
+
+            # Response may be a list or wrapped in a dict
+            if isinstance(data, list):
+                items = data
+                pagination = {}
+            else:
+                items = data.get("productAvailabilityList", data.get("ProductAvailabilityList", []))
+                pagination = data.get("paginationInfo", {})
+
+            if not items:
+                break
+
+            for item in items:
+                wh = item.get("warehouse") or ""
+                if warehouse_codes and wh not in warehouse_codes:
+                    continue
+
+                yield {
+                    "productNumber": str(item.get("productNumber") or ""),
+                    "warehouse": wh,
+                    "availableBalance": item.get("availableBalance"),
+                    "physicalBalance": item.get("physicalBalance"),
+                    "reservedBalance": item.get("reservedBalance"),
+                    "incomingQuantity": item.get("incomingQuantity"),
+                    "nextReceivingDate": item.get("nextReceivingDate"),
+                    "modifiedDate": item.get("modifiedDate"),
+                }
+
+            total_pages = pagination.get("totalPages", 0)
+            if total_pages and page >= total_pages:
+                break
+            # If no pagination info (flat list), check if we got a full page
+            if not total_pages and len(items) < 100:
+                break
+            page += 1
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ from hotglue_singer_sdk.helpers.capabilities import AlertingLevel
 
 from tap_extend.streams import (
     CustomerOrdersStream,
+    ProductAvailabilityStream,
     ProductSupplierAgreementsStream,
     ProductsStream,
     PurchaseOrdersStream,
@@ -23,9 +24,10 @@ class TapExtend(Tap):
 
     Streams:
       - suppliers                     FULL_TABLE  GET /Supplier
-      - supplier_agreements           FULL_TABLE  GET /SupplierAgreement
+      - supplier_agreements           FULL_TABLE  GET /SupplierAgreement (active=true)
       - product_supplier_agreements   FULL_TABLE  GET /ProductSupplierAgreements
       - products                      INCREMENTAL GET /Products (modifiedDateFrom)
+      - product_availability          INCREMENTAL GET /ProductAvailability (modifiedDateFrom)
       - customer_orders               INCREMENTAL GET /CustomerOrders (modifiedDateFrom)
       - purchase_orders               INCREMENTAL GET /PurchaseOrders (createDateFrom)
     """
@@ -90,6 +92,7 @@ class TapExtend(Tap):
             SupplierAgreementsStream(tap=self),
             ProductSupplierAgreementsStream(tap=self),
             ProductsStream(tap=self),
+            ProductAvailabilityStream(tap=self),
             CustomerOrdersStream(tap=self),
             PurchaseOrdersStream(tap=self),
         ]
