@@ -6,7 +6,6 @@ from typing import List
 
 from hotglue_singer_sdk import Tap
 from hotglue_singer_sdk import typing as th
-from hotglue_singer_sdk.helpers.capabilities import AlertingLevel
 
 from tap_extend.streams import (
     CustomerOrdersStream,
@@ -33,7 +32,6 @@ class TapExtend(Tap):
     """
 
     name = "tap-extend"
-    alerting_level = AlertingLevel.WARNING
 
     config_jsonschema = th.PropertiesList(
         th.Property(
