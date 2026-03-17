@@ -1,12 +1,12 @@
 {
   "info": {
     "name": "Extend Commerce (Lxir)",
-    "description": "Extend Commerce REST API v1.0 — MAXGAMING.\n\nAuth: set `username` + `password` in collection variables. The pre-request script auto-generates `basic_token`.\nBase URL: {{base_url}}/v1_0/{{client}}/\n\nDocs: https://developer.lxir.se/RESTAPI/swagger/ui/index",
+    "description": "Extend Commerce REST API v1.0.\n\nAuth: set `username` + `password` in collection variables. The pre-request script auto-generates `basic_token`.\nBase URL: {{base_url}}/v1_0/{{client}}/\n\nDocs: https://developer.lxir.se/RESTAPI/swagger/ui/index",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "base_url", "value": "https://s05.extend.se/RESTAPI", "type": "string" },
-    { "key": "client",   "value": "MAXGAMING",                      "type": "string" },
+    { "key": "client",   "value": "",                            "type": "string" },
     { "key": "username", "value": "",                                "type": "string" },
     { "key": "password", "value": "",                                "type": "string" },
     { "key": "basic_token", "value": "",                             "type": "string", "description": "Auto-set by pre-request script" }
@@ -85,7 +85,7 @@
                 { "key": "validTo",         "value": "",     "description": "Filter by end date",                  "disabled": true }
               ]
             },
-            "description": "Returns {SupplierAgreementList, paginationInfo}. MAXGAMING has 525 agreements across multiple pages."
+            "description": "Returns {SupplierAgreementList, paginationInfo}."
           }
         },
         {
@@ -142,7 +142,7 @@
                 { "key": "supplyMode",             "value": "",                       "description": "e.g. Warehouse, DirectDelivery",                     "disabled": true },
                 { "key": "supplierNumber",         "value": "",                       "description": "Filter by supplier number",                          "disabled": true },
                 { "key": "supplierProductNumber",  "value": "",                       "description": "Supplier's own product number",                      "disabled": true },
-                { "key": "warehouse",              "value": "",                       "description": "Filter to a single warehouse (e.g. MAXGAMING)",       "disabled": true },
+                { "key": "warehouse",              "value": "",                       "description": "Filter to a single warehouse shortname",       "disabled": true },
                 { "key": "productProperty",        "value": "",                       "description": "Filter by product property name",                    "disabled": true }
               ]
             },
@@ -190,7 +190,7 @@
               "host": ["{{base_url}}"], "path": ["v1_0", "{{client}}", "ProductAvailability", ":productNumber", ":warehouse"],
               "variable": [
                 { "key": "productNumber", "value": "" },
-                { "key": "warehouse",     "value": "MAXGAMING" }
+                { "key": "warehouse",     "value": "" }
               ]
             }
           }
@@ -201,10 +201,10 @@
             "method": "GET",
             "header": [{ "key": "ExtendBasicAuthorization", "value": "Basic {{basic_token}}" }],
             "url": {
-              "raw": "{{base_url}}/v1_0/{{client}}/WarehouseStockLevels?warehouse=MAXGAMING&pageNumber=1",
+              "raw": "{{base_url}}/v1_0/{{client}}/WarehouseStockLevels?warehouse={{warehouse}}&pageNumber=1",
               "host": ["{{base_url}}"], "path": ["v1_0", "{{client}}", "WarehouseStockLevels"],
               "query": [
-                { "key": "warehouse",     "value": "MAXGAMING", "description": "Required — warehouse shortname" },
+                { "key": "warehouse",     "value": "", "description": "Required — warehouse shortname" },
                 { "key": "productNumber", "value": "",           "description": "Optional — filter to single product", "disabled": true },
                 { "key": "pageNumber",    "value": "1" }
               ]
@@ -349,7 +349,7 @@
                 { "key": "externalOrderNumber","value": "",                     "description": "External system order number",                  "disabled": true },
                 { "key": "supplierNumber",     "value": "",                     "description": "Filter by supplier company number",             "disabled": true },
                 { "key": "supplierOrderNumber","value": "",                     "description": "PO number used by the supplier",                "disabled": true },
-                { "key": "warehouse",          "value": "",                     "description": "Filter by warehouse (e.g. MAXGAMING)",          "disabled": true },
+                { "key": "warehouse",          "value": "",                     "description": "Filter by warehouse shortname",          "disabled": true },
                 { "key": "IsOpen",             "value": "true",                 "description": "true = only open POs",                          "disabled": true },
                 { "key": "IsReceived",         "value": "true",                 "description": "true = only POs with something received",       "disabled": true }
               ]

@@ -45,7 +45,7 @@ class TapExtend(Tap):
             "client",
             th.StringType,
             required=True,
-            description="Client shortname (e.g. MAXGAMING)",
+            description="Client shortname as configured in Extend Commerce (e.g. YOURCLIENT)",
         ),
         th.Property(
             "username",
