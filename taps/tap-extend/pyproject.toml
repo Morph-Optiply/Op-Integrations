@@ -18,3 +18,4 @@ backoff = ">=1.8"
 
 [tool.poetry.scripts]
 tap-extend = "tap_extend.tap:TapExtend.cli"
+tap-extend-commerce = "tap_extend.tap:TapExtend.cli"
