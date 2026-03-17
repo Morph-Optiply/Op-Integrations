@@ -1,17 +1,18 @@
 """Stream definitions for tap-extend.
 
 Streams:
-  - SuppliersStream:          GET /Supplier          (FULL_TABLE)
-  - SupplierAgreementsStream: GET /SupplierAgreement (FULL_TABLE)
-  - ProductsStream:           GET /Products          (INCREMENTAL, modifiedDateFrom)
-  - CustomerOrdersStream:     GET /CustomerOrders    (INCREMENTAL, modifiedDateFrom)
-  - PurchaseOrdersStream:     GET /PurchaseOrders    (INCREMENTAL, createDateFrom)
+  - SuppliersStream:                  GET /Supplier                  (FULL_TABLE)
+  - SupplierAgreementsStream:         GET /SupplierAgreement         (FULL_TABLE)
+  - ProductSupplierAgreementsStream:  GET /ProductSupplierAgreements (FULL_TABLE)
+  - ProductsStream:                   GET /Products                  (INCREMENTAL, modifiedDateFrom)
+  - CustomerOrdersStream:             GET /CustomerOrders            (INCREMENTAL, modifiedDateFrom)
+  - PurchaseOrdersStream:             GET /PurchaseOrders            (INCREMENTAL, createDateFrom)
 
 All streams share ExtendStream base class for auth/HTTP/state handling.
 
 Pagination:
   - Products, CustomerOrders: pageCount + pageOffset
-  - Supplier, SupplierAgreement, PurchaseOrders: pageNumber (1-based)
+  - Supplier, SupplierAgreement, ProductSupplierAgreements, PurchaseOrders: pageNumber (1-based)
 """
 
 from __future__ import annotations
@@ -260,23 +261,106 @@ class SupplierAgreementsStream(ExtendStream):
 
 
 # ---------------------------------------------------------------------------
-# ProductsStream  —  GET /Products  +  GET /Products/{id}
+# ProductSupplierAgreementsStream  —  GET /ProductSupplierAgreements
+# ---------------------------------------------------------------------------
+
+
+class ProductSupplierAgreementsStream(ExtendStream):
+    """Extend Commerce product↔SupplierAgreement links.
+
+    One record per (product, supplier agreement) pair. Used as the primary
+    source for Optiply SupplierProducts — replaces the per-product detail
+    call that was previously embedded in ProductsStream.
+
+    FULL_TABLE — no date filter available on this endpoint.
+    Pagination: pageNumber (1-based).
+    Response wrapper key: productSupplierAgreementList.
+    """
+
+    name = "product_supplier_agreements"
+    primary_keys = ["productNumber", "supplierAgreementNumber"]
+    replication_method = "FULL_TABLE"
+
+    schema = th.PropertiesList(
+        th.Property("productNumber", th.StringType),
+        th.Property("supplierAgreementNumber", th.IntegerType),
+        th.Property("supplierAgreementName", th.StringType),
+        th.Property("supplierName", th.StringType),
+        th.Property("supplierAgreementCurrencyId", th.StringType),
+        th.Property("supplierProductNumber", th.StringType),
+        th.Property("supplierProductName", th.StringType),
+        th.Property("price", th.NumberType),
+        th.Property("vatPercent", th.NumberType),
+        th.Property("manufacturingLeadTimeHour", th.NumberType),
+        th.Property("supplierAgreementProductionLeadtimeHours", th.IntegerType),
+        th.Property("supplierAgreementTransportLeadtimeHours", th.IntegerType),
+        th.Property("inactive", th.BooleanType),
+        th.Property("statisticalNumber", th.StringType),
+        th.Property("country", th.StringType),
+        th.Property("productUnitId", th.StringType),
+        th.Property("useOtherPurchaseUnit", th.BooleanType),
+        th.Property("purchaseProductUnit", th.StringType),
+        th.Property("quantityPerPurchaseProductUnit", th.NumberType),
+    ).to_dict()
+
+    def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
+        page = 1
+        while True:
+            data = self._request(
+                f"{self.base_url}/ProductSupplierAgreements", params={"pageNumber": page}
+            ).json()
+            items = data.get("productSupplierAgreementList", [])
+            pagination = data.get("paginationInfo", {})
+
+            for a in items:
+                yield {
+                    "productNumber": a.get("productNumber"),
+                    "supplierAgreementNumber": a.get("supplierAgreementNumber"),
+                    "supplierAgreementName": a.get("supplierAgreementName"),
+                    "supplierName": a.get("supplierName"),
+                    "supplierAgreementCurrencyId": a.get("supplierAgreementCurrencyId"),
+                    "supplierProductNumber": a.get("supplierProductNumber"),
+                    "supplierProductName": a.get("supplierProductName"),
+                    "price": a.get("price"),
+                    "vatPercent": a.get("vatPercent"),
+                    "manufacturingLeadTimeHour": a.get("manufacturingLeadTimeHour"),
+                    "supplierAgreementProductionLeadtimeHours": a.get("supplierAgreementProductionLeadtimeHours"),
+                    "supplierAgreementTransportLeadtimeHours": a.get("supplierAgreementTransportLeadtimeHours"),
+                    "inactive": a.get("inactive"),
+                    "statisticalNumber": a.get("statisticalNumber"),
+                    "country": a.get("country"),
+                    "productUnitId": a.get("productUnitId"),
+                    "useOtherPurchaseUnit": a.get("useOtherPurchaseUnit"),
+                    "purchaseProductUnit": a.get("purchaseProductUnit"),
+                    "quantityPerPurchaseProductUnit": a.get("quantityPerPurchaseProductUnit"),
+                }
+
+            total_pages = pagination.get("totalPages", 0)
+            if page >= total_pages:
+                break
+            page += 1
+
+
+# ---------------------------------------------------------------------------
+# ProductsStream  —  GET /Products
 # ---------------------------------------------------------------------------
 
 
 class ProductsStream(ExtendStream):
-    """Extend Commerce Products with per-warehouse stock and supplier agreements.
+    """Extend Commerce Products with per-warehouse stock.
 
     List endpoint (GET /Products) returns one row per product-per-warehouse.
     This stream deduplicates by productNumber, aggregating warehouse stock
-    into a JSON array. For each unique product the detail endpoint is called
-    to retrieve productSuppliers (= ProductSupplierAgreement data).
+    into a JSON array.
+
+    Supplier-product links are handled by ProductSupplierAgreementsStream
+    (GET /ProductSupplierAgreements) — no per-product detail calls needed here.
 
     Incremental via modifiedDateFrom server-side filter.
     Pagination: pageCount + pageOffset (NOT pageNumber).
     Replication key: createDate (only date field present on list response).
 
-    Schema from ProductListItem + ProductSupplier definitions.
+    Schema from ProductListItem definition.
     """
 
     name = "products"
@@ -305,8 +389,6 @@ class ProductsStream(ExtendStream):
         th.Property("financialCategory", th.StringType),
         # Aggregated per-warehouse stock as JSON: [{warehouse, availableBalance}]
         th.Property("warehouse_stock", th.StringType),
-        # ProductSupplierAgreement list as JSON from GET /Products/{id}
-        th.Property("product_suppliers", th.StringType),
     ).to_dict()
 
     def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
@@ -321,6 +403,8 @@ class ProductsStream(ExtendStream):
         else:
             modified_date_from = None
 
+        end_date = self.config.get("end_date")
+
         page_offset = 0
         page_count = 100
 
@@ -328,6 +412,8 @@ class ProductsStream(ExtendStream):
             params: dict[str, Any] = {"pageCount": page_count, "pageOffset": page_offset}
             if modified_date_from:
                 params["modifiedDateFrom"] = modified_date_from
+            if end_date:
+                params["modifiedDateTo"] = str(end_date)
 
             product_list = self._request(
                 f"{self.base_url}/Products", params=params
@@ -376,24 +462,7 @@ class ProductsStream(ExtendStream):
 
         for pn, record in seen.items():
             record["warehouse_stock"] = json.dumps(stock_map.get(pn, []))
-            record["product_suppliers"] = json.dumps(self._fetch_product_suppliers(pn))
             yield record
-
-    def _fetch_product_suppliers(self, product_number: str) -> list:
-        """Fetch productSuppliers from GET /Products/{productNumber}.
-
-        Returns the productSuppliers array from the detail response.
-        Fields per ProductSupplier: supplierAgreement, supplierProductNumber,
-        supplierProductName, price, vatPercent, country,
-        manufacturingLeadTimeHour, supplierAgreementNumber, supplierCurrency.
-        """
-        try:
-            detail = self._request(f"{self.base_url}/Products/{product_number}").json()
-            suppliers = detail.get("productSuppliers", [])
-            return suppliers if isinstance(suppliers, list) else []
-        except Exception:
-            logger.warning("Failed to fetch suppliers for product %s", product_number, exc_info=True)
-            return []
 
 
 # ---------------------------------------------------------------------------
@@ -450,17 +519,23 @@ class CustomerOrdersStream(ExtendStream):
             two_years_ago = datetime.now(timezone.utc) - timedelta(days=730)
             modified_date_from = two_years_ago.strftime("%Y-%m-%dT%H:%M:%S")
 
+        end_date = self.config.get("end_date")
+
         page_offset = 0
         page_count = 100
 
         while True:
+            params: dict[str, Any] = {
+                "pageCount": page_count,
+                "pageOffset": page_offset,
+                "modifiedDateFrom": modified_date_from,
+            }
+            if end_date:
+                params["changeDateTo"] = str(end_date)
+
             order_list = self._request(
                 f"{self.base_url}/CustomerOrders",
-                params={
-                    "pageCount": page_count,
-                    "pageOffset": page_offset,
-                    "modifiedDateFrom": modified_date_from,
-                },
+                params=params,
             ).json()
 
             if not isinstance(order_list, list) or not order_list:
@@ -588,6 +663,8 @@ class PurchaseOrdersStream(ExtendStream):
             params_base["createDateFrom"] = str(start_replication)
         elif self.config.get("start_date"):
             params_base["createDateFrom"] = str(self.config["start_date"])
+        if self.config.get("end_date"):
+            params_base["createDateTo"] = str(self.config["end_date"])
 
         page = 1
         while True:

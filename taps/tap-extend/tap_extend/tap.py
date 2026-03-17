@@ -10,6 +10,7 @@ from hotglue_singer_sdk.helpers.capabilities import AlertingLevel
 
 from tap_extend.streams import (
     CustomerOrdersStream,
+    ProductSupplierAgreementsStream,
     ProductsStream,
     PurchaseOrdersStream,
     SupplierAgreementsStream,
@@ -21,11 +22,12 @@ class TapExtend(Tap):
     """Singer tap for Extend Commerce (Lxir) REST API.
 
     Streams:
-      - suppliers          FULL_TABLE  GET /Supplier
-      - supplier_agreements FULL_TABLE GET /SupplierAgreement
-      - products           INCREMENTAL GET /Products (modifiedDateFrom)
-      - customer_orders    INCREMENTAL GET /CustomerOrders (modifiedDateFrom)
-      - purchase_orders    INCREMENTAL GET /PurchaseOrders (createDateFrom)
+      - suppliers                     FULL_TABLE  GET /Supplier
+      - supplier_agreements           FULL_TABLE  GET /SupplierAgreement
+      - product_supplier_agreements   FULL_TABLE  GET /ProductSupplierAgreements
+      - products                      INCREMENTAL GET /Products (modifiedDateFrom)
+      - customer_orders               INCREMENTAL GET /CustomerOrders (modifiedDateFrom)
+      - purchase_orders               INCREMENTAL GET /PurchaseOrders (createDateFrom)
     """
 
     name = "tap-extend"
@@ -64,6 +66,12 @@ class TapExtend(Tap):
             description="Earliest record date to sync (ISO 8601)",
         ),
         th.Property(
+            "end_date",
+            th.DateTimeType,
+            required=False,
+            description="Latest record date to sync (ISO 8601). Used as upper bound on incremental streams.",
+        ),
+        th.Property(
             "warehouse_codes",
             th.ArrayType(th.StringType),
             required=False,
@@ -80,6 +88,7 @@ class TapExtend(Tap):
         return [
             SuppliersStream(tap=self),
             SupplierAgreementsStream(tap=self),
+            ProductSupplierAgreementsStream(tap=self),
             ProductsStream(tap=self),
             CustomerOrdersStream(tap=self),
             PurchaseOrdersStream(tap=self),
