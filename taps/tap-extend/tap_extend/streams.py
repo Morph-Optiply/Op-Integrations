@@ -509,7 +509,7 @@ class ProductAvailabilityStream(ExtendStream):
     ).to_dict()
 
     def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
-        warehouse_codes = self.tap.warehouse_codes
+        warehouse_codes = self._tap.warehouse_codes
 
         start_replication = self.get_starting_replication_key_value(context)
         params_base: dict[str, Any] = {}
@@ -748,7 +748,7 @@ class PurchaseOrdersStream(ExtendStream):
     ).to_dict()
 
     def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
-        warehouse_codes = self.tap.warehouse_codes
+        warehouse_codes = self._tap.warehouse_codes
         start_replication = self.get_starting_replication_key_value(context)
 
         params_base: dict[str, Any] = {}
