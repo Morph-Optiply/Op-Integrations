@@ -21,6 +21,8 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from email.utils import parsedate_to_datetime
+from threading import Lock
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
@@ -54,6 +56,8 @@ class ExtendStream(Stream):
     """Base class for all Extend Commerce streams."""
 
     _session: Optional[requests.Session] = None
+    _rate_limit_lock = Lock()
+    _next_request_at = 0.0
 
     @property
     def session(self) -> requests.Session:
@@ -73,6 +77,60 @@ class ExtendStream(Stream):
         api_url = self.config.get("api_url", "https://s05.extend.se/RESTAPI").rstrip("/")
         return f"{api_url}/v1_0/{self.config['client']}"
 
+    @property
+    def requests_per_second(self) -> float:
+        raw_value = self.config.get("requests_per_second", 4)
+        try:
+            requests_per_second = float(raw_value)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Invalid requests_per_second=%r. Falling back to 4 requests/second.",
+                raw_value,
+            )
+            requests_per_second = 4.0
+        return max(requests_per_second, 0.1)
+
+    def _apply_client_throttle(self) -> None:
+        min_interval = 1.0 / self.requests_per_second
+        with ExtendStream._rate_limit_lock:
+            now = time.monotonic()
+            sleep_for = ExtendStream._next_request_at - now
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+                now = time.monotonic()
+            ExtendStream._next_request_at = max(ExtendStream._next_request_at, now) + min_interval
+
+    def _delay_from_retry_after(self, retry_after: Optional[str]) -> Optional[float]:
+        if not retry_after:
+            return None
+        try:
+            return max(float(retry_after), 0.0)
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                return None
+            return max(retry_at.timestamp() - time.time(), 0.0)
+
+    def _delay_from_reset_header(self, response: requests.Response) -> Optional[float]:
+        reset_value = response.headers.get("x-ratelimit-reset")
+        if not reset_value:
+            return None
+        try:
+            reset_epoch = float(reset_value)
+        except (TypeError, ValueError):
+            return None
+        return max(reset_epoch - time.time(), 0.0) + 1.0
+
+    def _defer_next_request(self, delay_seconds: Optional[float]) -> None:
+        if not delay_seconds or delay_seconds <= 0:
+            return
+        with ExtendStream._rate_limit_lock:
+            ExtendStream._next_request_at = max(
+                ExtendStream._next_request_at,
+                time.monotonic() + delay_seconds,
+            )
+
     @backoff.on_exception(
         backoff.expo,
         (requests.exceptions.ConnectionError, requests.exceptions.Timeout, _RetryableError),
@@ -81,6 +139,7 @@ class ExtendStream(Stream):
     )
     def _request(self, url: str, params: Optional[dict] = None) -> requests.Response:
         """GET with retry/backoff.  Only retries on 429, 5xx, and connection errors."""
+        self._apply_client_throttle()
         response = self.session.get(url, params=params, timeout=120)
 
         if response.status_code == 401:
@@ -88,14 +147,24 @@ class ExtendStream(Stream):
                 f"Authentication failed (401): {response.text[:300]}"
             )
         if response.status_code == 429:
-            retry_after = int(response.headers.get("Retry-After", 30))
-            logger.warning("Rate limited (429). Sleeping %ds.", retry_after)
-            time.sleep(retry_after)
+            retry_after = self._delay_from_retry_after(response.headers.get("Retry-After"))
+            reset_delay = self._delay_from_reset_header(response)
+            delay_seconds = max(
+                retry_after if retry_after is not None else 0.0,
+                reset_delay if reset_delay is not None else 0.0,
+                30.0,
+            )
+            logger.warning("Rate limited (429). Sleeping %.1fs.", delay_seconds)
+            time.sleep(delay_seconds)
+            self._defer_next_request(delay_seconds)
             raise _RetryableError("Rate limited (429)")
         if response.status_code >= 500:
             raise _RetryableError(
                 f"Server error ({response.status_code}): {response.text[:300]}"
             )
+
+        if response.headers.get("x-ratelimit-remaining") == "0":
+            self._defer_next_request(self._delay_from_reset_header(response))
 
         # 4xx (except 429 handled above) are client errors — fail immediately, no retry
         response.raise_for_status()

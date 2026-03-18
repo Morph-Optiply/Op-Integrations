@@ -80,6 +80,16 @@ class TapExtend(Tap):
                 "If omitted, all warehouses are synced."
             ),
         ),
+        th.Property(
+            "requests_per_second",
+            th.NumberType,
+            required=False,
+            default=4,
+            description=(
+                "Client-side request throttle for Extend API calls. "
+                "Default 4 req/s to stay below Extend's standard 5 req/s limit."
+            ),
+        ),
     ).to_dict()
 
     @property
