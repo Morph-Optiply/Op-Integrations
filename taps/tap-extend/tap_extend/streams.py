@@ -359,24 +359,27 @@ class ProductSupplierAgreementsStream(ExtendStream):
                 "falling back to per-supplierAgreement iteration"
             )
 
-        # Fallback: iterate by supplierAgreementNumber
-        seen_ids: set = set()
-        sa_page = 1
+        # Fallback: iterate by productNumber (fewer calls than supplierAgreementNumber)
+        seen_products: set = set()
+        p_offset = 0
+        p_count = 100
         while True:
-            sa_data = self._request(
-                f"{self.base_url}/SupplierAgreement",
-                params={"pageNumber": sa_page, "active": "true"},
+            product_list = self._request(
+                f"{self.base_url}/Products",
+                params={"pageCount": p_count, "pageOffset": p_offset},
             ).json()
-            for agreement in sa_data.get("SupplierAgreementList", []):
-                sa_num = agreement.get("supplierAgreementNumber")
-                if sa_num is None or sa_num in seen_ids:
+            if not isinstance(product_list, list) or not product_list:
+                break
+            for p in product_list:
+                pn = str(p.get("productNumber") or "")
+                if not pn or pn in seen_products:
                     continue
-                seen_ids.add(sa_num)
+                seen_products.add(pn)
                 try:
                     psa_page = 1
                     while True:
                         psa_data = self._request(
-                            url, params={"supplierAgreementNumber": sa_num, "pageNumber": psa_page}
+                            url, params={"productNumber": pn, "pageNumber": psa_page}
                         ).json()
                         for a in psa_data.get("productSupplierAgreementList", []):
                             yield self._map(a)
@@ -385,14 +388,12 @@ class ProductSupplierAgreementsStream(ExtendStream):
                             break
                         psa_page += 1
                 except requests.exceptions.HTTPError as e:
-                    logger.warning("PSA: skipping supplierAgreementNumber=%s (%s)", sa_num, e)
-
-            sa_pagination = sa_data.get("paginationInfo", {})
-            if sa_page >= sa_pagination.get("totalPages", 0):
+                    logger.warning("PSA: skipping productNumber=%s (%s)", pn, e)
+            if len(product_list) < p_count:
                 break
-            sa_page += 1
+            p_offset += p_count
 
-        logger.info("ProductSupplierAgreements: per-SA iteration done (%d agreements)", len(seen_ids))
+        logger.info("ProductSupplierAgreements: per-product iteration done (%d products)", len(seen_products))
 
 
 # ---------------------------------------------------------------------------
