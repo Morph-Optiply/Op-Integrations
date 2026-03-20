@@ -51,18 +51,21 @@ class FlowsStream(HotglueStream):
     schema = th.PropertiesList(
         th.Property("flow_id", th.StringType),
         th.Property("name", th.StringType),
-        th.Property("type", th.StringType),
-        th.Property("tap", th.StringType),
-        th.Property("target", th.StringType),
-        th.Property("default_tap", th.StringType),
-        th.Property("default_target", th.StringType),
-        th.Property("domain", th.StringType),
-        th.Property("schedule", th.StringType),
+        th.Property("description", th.StringType),
+        th.Property("type", th.BooleanType),
+        th.Property("taps", th.CustomType({"type": ["array", "null"]})),
+        th.Property("targets", th.CustomType({"type": ["array", "null"]})),
     ).to_dict()
 
     @property
     def path(self) -> str:
         return f"/{self.env_id}/flows/supported"
+
+    def post_process(self, row: dict, context: Optional[dict]) -> dict:
+        # API returns "id" — map to "flow_id"
+        if "id" in row:
+            row["flow_id"] = row.pop("id")
+        return row
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +74,7 @@ class FlowsStream(HotglueStream):
 
 
 class TenantConfigStream(HotglueStream):
-    """Tenant configuration (credentials redacted by API harness)."""
+    """Tenant configuration — credentials, metadata, account info."""
 
     name = "tenant_config"
     primary_keys = ["tenant_id"]
@@ -81,11 +84,9 @@ class TenantConfigStream(HotglueStream):
 
     schema = th.PropertiesList(
         th.Property("tenant_id", th.StringType),
-        th.Property("config", th.CustomType({"type": ["object", "string"]})),
-        th.Property("api_credentials", th.CustomType({"type": ["object", "string"]})),
-        th.Property("account_id", th.StringType),
-        th.Property("coupling_id", th.StringType),
-        th.Property("webshop_handle", th.StringType),
+        th.Property("apiCredentials", th.CustomType({"type": ["object", "null"]})),
+        th.Property("hotglue_metadata", th.CustomType({"type": ["object", "null"]})),
+        th.Property("importCredentials", th.CustomType({"type": ["object", "null"]})),
     ).to_dict()
 
     @property
@@ -119,7 +120,7 @@ class TenantMappingStream(HotglueStream):
 
     def parse_response(self, response: requests.Response) -> Iterable[dict]:
         """Wrap the mapping response into a record."""
-        if response.status_code == 404:
+        if response.status_code in (400, 404):
             return
 
         try:
@@ -147,12 +148,12 @@ class LinkedFlowsStream(HotglueStream):
     schema = th.PropertiesList(
         th.Property("tenant_id", th.StringType),
         th.Property("flow_id", th.StringType),
-        th.Property("tap", th.StringType),
-        th.Property("target", th.StringType),
-        th.Property("type", th.StringType),
-        th.Property("schedule", th.StringType),
-        th.Property("status", th.StringType),
-        th.Property("last_sync", th.DateTimeType),
+        th.Property("name", th.StringType),
+        th.Property("description", th.StringType),
+        th.Property("type", th.BooleanType),
+        th.Property("taps", th.CustomType({"type": ["array", "null"]})),
+        th.Property("targets", th.CustomType({"type": ["array", "null"]})),
+        th.Property("version", th.StringType),
     ).to_dict()
 
     @property
@@ -189,7 +190,7 @@ class LinkedFlowsStream(HotglueStream):
 
 
 class LinkedSourcesStream(HotglueStream):
-    """Source configuration per tenant/flow (auth credentials redacted)."""
+    """Source configuration per tenant/flow."""
 
     name = "linked_sources"
     primary_keys = ["tenant_id", "flow_id", "tap"]
@@ -201,11 +202,21 @@ class LinkedSourcesStream(HotglueStream):
         th.Property("tenant_id", th.StringType),
         th.Property("flow_id", th.StringType),
         th.Property("tap", th.StringType),
-        th.Property("config", th.CustomType({"type": ["object", "string"]})),
-        th.Property("field_map", th.CustomType({"type": ["object", "array", "string"]})),
-        th.Property("status", th.StringType),
-        th.Property("incremental", th.BooleanType),
-        th.Property("schedule", th.StringType),
+        th.Property("domain", th.StringType),
+        th.Property("label", th.StringType),
+        th.Property("type", th.StringType),
+        th.Property("config", th.CustomType({"type": ["object", "null"]})),
+        th.Property("fieldMap", th.CustomType({"type": ["object", "null"]})),
+        th.Property("connect_ui_params", th.CustomType({"type": ["object", "null"]})),
+        th.Property("connector_props", th.CustomType({"type": ["object", "null"]})),
+        th.Property("category", th.StringType),
+        th.Property("isForked", th.BooleanType),
+        th.Property("forkedFieldMap", th.BooleanType),
+        th.Property("config_fetched", th.BooleanType),
+        th.Property("isReconnecting", th.BooleanType),
+        th.Property("connection_name", th.StringType),
+        th.Property("default_import_scheduler", th.StringType),
+        th.Property("default_export_scheduler", th.StringType),
     ).to_dict()
 
     @property
@@ -237,10 +248,15 @@ class LinkedTargetsStream(HotglueStream):
         th.Property("tenant_id", th.StringType),
         th.Property("flow_id", th.StringType),
         th.Property("target", th.StringType),
-        th.Property("config", th.CustomType({"type": ["object", "string"]})),
-        th.Property("field_map", th.CustomType({"type": ["object", "array", "string"]})),
-        th.Property("status", th.StringType),
-        th.Property("schedule", th.StringType),
+        th.Property("domain", th.StringType),
+        th.Property("label", th.StringType),
+        th.Property("type", th.StringType),
+        th.Property("config", th.CustomType({"type": ["object", "null"]})),
+        th.Property("fieldMap", th.CustomType({"type": ["object", "null"]})),
+        th.Property("connector_props", th.CustomType({"type": ["object", "null"]})),
+        th.Property("category", th.StringType),
+        th.Property("isForked", th.BooleanType),
+        th.Property("connection_name", th.StringType),
     ).to_dict()
 
     @property
@@ -274,7 +290,7 @@ class SourceStateStream(HotglueStream):
         return f"/{self.env_id}/{{flow_id}}/{{tenant_id}}/linkedSources/state"
 
     def parse_response(self, response: requests.Response) -> Iterable[dict]:
-        if response.status_code == 404:
+        if response.status_code in (400, 404):
             return
 
         try:
@@ -305,18 +321,28 @@ class JobsStream(HotglueStream):
         th.Property("flow_id", th.StringType),
         th.Property("job_id", th.StringType),
         th.Property("job_name", th.StringType),
+        th.Property("env_id", th.StringType),
         th.Property("s3_root", th.StringType),
-        th.Property("status", th.StringType),
         th.Property("tap", th.StringType),
         th.Property("target", th.StringType),
+        th.Property("status", th.StringType),
         th.Property("start_time", th.DateTimeType),
-        th.Property("stop_time", th.DateTimeType),
-        th.Property("task_count", th.IntegerType),
-        th.Property("num_records", th.IntegerType),
-        th.Property("error_count", th.IntegerType),
-        th.Property("error_message", th.StringType),
-        th.Property("scheduled", th.BooleanType),
-        th.Property("env_id", th.StringType),
+        th.Property("last_updated", th.DateTimeType),
+        th.Property("scheduled_job", th.BooleanType),
+        th.Property("sync_type", th.StringType),
+        th.Property("streaming_job", th.BooleanType),
+        th.Property("message", th.StringType),
+        th.Property("error", th.StringType),
+        th.Property("duration", th.IntegerType),
+        th.Property("task_type", th.StringType),
+        th.Property("task_region", th.StringType),
+        th.Property("launch_type", th.StringType),
+        th.Property("task_definition", th.CustomType({"type": ["object", "null"]})),
+        th.Property("resources_usage", th.CustomType({"type": ["object", "null"]})),
+        th.Property("status_timestamp", th.CustomType({"type": ["object", "null"]})),
+        th.Property("data_sizes", th.CustomType({"type": ["object", "null"]})),
+        th.Property("metrics", th.CustomType({"type": ["object", "null"]})),
+        th.Property("tap_install_uri", th.StringType),
     ).to_dict()
 
     @property
@@ -327,4 +353,7 @@ class JobsStream(HotglueStream):
         if context:
             row["tenant_id"] = context["tenant_id"]
             row["flow_id"] = context["flow_id"]
+        # API returns "tenant" — normalize
+        if "tenant" in row and "tenant_id" not in row:
+            row["tenant_id"] = row.pop("tenant")
         return row
