@@ -24,17 +24,16 @@ class TenantsStream(HotglueStream):
 
     schema = th.PropertiesList(
         th.Property("tenant_id", th.StringType),
-        th.Property("tenant_name", th.StringType),
-        th.Property("tap", th.StringType),
-        th.Property("target", th.StringType),
-        th.Property("status", th.StringType),
-        th.Property("created_at", th.DateTimeType),
-        th.Property("last_sync", th.DateTimeType),
     ).to_dict()
 
     @property
     def path(self) -> str:
         return f"/tenants/{self.env_id}"
+
+    def parse_response(self, response: requests.Response) -> Iterable[dict]:
+        """API returns a flat list of tenant ID strings — wrap into dicts."""
+        for tenant_id in response.json():
+            yield {"tenant_id": str(tenant_id)}
 
     def get_child_context(self, record: dict, context: Optional[dict]) -> dict:
         """Pass tenant_id to child streams."""
