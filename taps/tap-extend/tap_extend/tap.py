@@ -13,6 +13,8 @@ from tap_extend.streams import (
     ProductSupplierAgreementsStream,
     ProductsStream,
     PurchaseOrdersStream,
+    ReportsOrderHeadersStream,
+    ReportsOrderRowsStream,
     SupplierAgreementsStream,
     SuppliersStream,
 )
@@ -29,6 +31,8 @@ class TapExtend(Tap):
       - product_availability          INCREMENTAL GET /ProductAvailability (modifiedDateFrom)
       - customer_orders               INCREMENTAL GET /CustomerOrders (modifiedDateFrom)
       - purchase_orders               INCREMENTAL GET /PurchaseOrders (createDateFrom)
+      - reports_order_headers         INCREMENTAL GET /reports/{client}/OrderHeaders (changeDate day-by-day)
+      - reports_order_rows            INCREMENTAL GET /reports/{client}/OrderRows    (changeDate day-by-day)
     """
 
     name = "tap-extend"
@@ -110,6 +114,8 @@ class TapExtend(Tap):
             ProductAvailabilityStream(tap=self),
             CustomerOrdersStream(tap=self),
             PurchaseOrdersStream(tap=self),
+            ReportsOrderHeadersStream(tap=self),
+            ReportsOrderRowsStream(tap=self),
         ]
 
 
