@@ -114,7 +114,7 @@ def get_sell_order_withlines_payload(row):
         "totalValue": row.get('totalValue', None),
         "remoteId": row.get('remoteId', None),
         "placed": row.get('placed', None),
-        "orderLines": row.get('lines', None),
+        "orderLines": row.get('orderLines', row.get('lines', None)),
         "completed": nan_to_none(row.get('completed', None)),
         "remoteDataSyncedToDate": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
