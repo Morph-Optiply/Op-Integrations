@@ -135,6 +135,14 @@ class ExtendStream(Stream):
                 time.monotonic() + delay_seconds,
             )
 
+    def _is_retryable_client_error(self, response: requests.Response) -> bool:
+        """Return True for known transient 4xx responses misclassified by Extend."""
+        if response.status_code != 400:
+            return False
+
+        message = (response.text or "").lower()
+        return "deadlock" in message and "rerun the transaction" in message
+
     @backoff.on_exception(
         backoff.expo,
         (requests.exceptions.ConnectionError, requests.exceptions.Timeout, _RetryableError),
@@ -165,6 +173,15 @@ class ExtendStream(Stream):
         if response.status_code >= 500:
             raise _RetryableError(
                 f"Server error ({response.status_code}): {response.text[:300]}"
+            )
+        if self._is_retryable_client_error(response):
+            logger.warning(
+                "Retrying transient Extend client error (%s): %s",
+                response.status_code,
+                response.text[:300],
+            )
+            raise _RetryableError(
+                f"Transient client error ({response.status_code}): {response.text[:300]}"
             )
 
         if response.headers.get("x-ratelimit-remaining") == "0":
