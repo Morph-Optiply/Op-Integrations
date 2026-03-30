@@ -999,3 +999,176 @@ class PurchaseOrdersStream(ExtendStream):
             "rows": "[]",
             "shipments": "[]",
         }
+
+
+# ---------------------------------------------------------------------------
+# ReportsOrderHeadersStream  —  GET /reports/{client}/OrderHeaders
+# ---------------------------------------------------------------------------
+
+
+class ReportsOrderHeadersStream(ExtendStream):
+    """Extend Commerce Reports — Order Headers.
+
+    Uses the /reports/{client}/OrderHeaders endpoint.
+    Day-by-day incremental: changeDate and toChangeDate are set to the same
+    single day. Within each day, pageNumber is incremented until
+    currentPage == totalPages in paginationInfo. Then the next day is processed.
+
+    Replication key: changeDate (date of the request window).
+    """
+
+    name = "reports_order_headers"
+    primary_keys = ["orderNumber"]
+    replication_key = "changeDate"
+    replication_method = "INCREMENTAL"
+
+    schema = th.PropertiesList(
+        th.Property("orderNumber", th.StringType),
+        th.Property("orderNumberExternal", th.StringType),
+        th.Property("orderType", th.StringType),
+        th.Property("orderStatus", th.StringType),
+        th.Property("orderDate", th.DateTimeType),
+        th.Property("askedDeliveryDate", th.DateTimeType),
+        th.Property("customerNumber", th.StringType),
+        th.Property("customerName", th.StringType),
+        th.Property("totalPrice", th.NumberType),
+        th.Property("currency", th.StringType),
+        th.Property("warehouse", th.StringType),
+        th.Property("changeDate", th.DateTimeType),
+    ).to_dict()
+
+    @property
+    def reports_url(self) -> str:
+        api_url = self.config.get("api_url", "https://s05.extend.se/RESTAPI").rstrip("/")
+        return f"{api_url}/reports/{self.config['client']}"
+
+    def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
+        start_replication = self.get_starting_replication_key_value(context)
+        if start_replication:
+            start_date = datetime.fromisoformat(str(start_replication)).date()
+        elif self.config.get("start_date"):
+            start_date = datetime.fromisoformat(str(self.config["start_date"])).date()
+        else:
+            start_date = (datetime.now(timezone.utc) - timedelta(days=730)).date()
+
+        end_date_cfg = self.config.get("end_date")
+        if end_date_cfg:
+            end_date = datetime.fromisoformat(str(end_date_cfg)).date()
+        else:
+            end_date = datetime.now(timezone.utc).date()
+
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            page = 1
+            while True:
+                data = self._request(
+                    f"{self.reports_url}/OrderHeaders",
+                    params={
+                        "changeDate": date_str,
+                        "toChangeDate": date_str,
+                        "pageNumber": page,
+                    },
+                ).json()
+
+                items = data if isinstance(data, list) else data.get("orderHeaders", data.get("OrderHeaders", []))
+                pagination = data.get("paginationInfo", {}) if isinstance(data, dict) else {}
+
+                if isinstance(items, list):
+                    for item in items:
+                        item["changeDate"] = date_str
+                        yield item
+
+                current_page = pagination.get("currentPage", page)
+                total_pages = pagination.get("totalPages", 1)
+                if current_page >= total_pages:
+                    break
+                page += 1
+
+            current_date += timedelta(days=1)
+
+
+# ---------------------------------------------------------------------------
+# ReportsOrderRowsStream  —  GET /reports/{client}/OrderRows
+# ---------------------------------------------------------------------------
+
+
+class ReportsOrderRowsStream(ExtendStream):
+    """Extend Commerce Reports — Order Rows.
+
+    Uses the /reports/{client}/OrderRows endpoint.
+    Day-by-day incremental: changeDate and toChangeDate are set to the same
+    single day. Within each day, pageNumber is incremented until
+    currentPage == totalPages in paginationInfo. Then the next day is processed.
+
+    Replication key: changeDate (date of the request window).
+    """
+
+    name = "reports_order_rows"
+    primary_keys = ["orderNumber", "position"]
+    replication_key = "changeDate"
+    replication_method = "INCREMENTAL"
+
+    schema = th.PropertiesList(
+        th.Property("orderNumber", th.StringType),
+        th.Property("position", th.IntegerType),
+        th.Property("orderRowStatus", th.StringType),
+        th.Property("productNumber", th.StringType),
+        th.Property("productName", th.StringType),
+        th.Property("quantity", th.NumberType),
+        th.Property("unitPrice", th.NumberType),
+        th.Property("vatPercent", th.NumberType),
+        th.Property("currency", th.StringType),
+        th.Property("warehouse", th.StringType),
+        th.Property("changeDate", th.DateTimeType),
+    ).to_dict()
+
+    @property
+    def reports_url(self) -> str:
+        api_url = self.config.get("api_url", "https://s05.extend.se/RESTAPI").rstrip("/")
+        return f"{api_url}/reports/{self.config['client']}"
+
+    def get_records(self, context: Optional[dict] = None) -> Iterable[dict]:
+        start_replication = self.get_starting_replication_key_value(context)
+        if start_replication:
+            start_date = datetime.fromisoformat(str(start_replication)).date()
+        elif self.config.get("start_date"):
+            start_date = datetime.fromisoformat(str(self.config["start_date"])).date()
+        else:
+            start_date = (datetime.now(timezone.utc) - timedelta(days=730)).date()
+
+        end_date_cfg = self.config.get("end_date")
+        if end_date_cfg:
+            end_date = datetime.fromisoformat(str(end_date_cfg)).date()
+        else:
+            end_date = datetime.now(timezone.utc).date()
+
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            page = 1
+            while True:
+                data = self._request(
+                    f"{self.reports_url}/OrderRows",
+                    params={
+                        "changeDate": date_str,
+                        "toChangeDate": date_str,
+                        "pageNumber": page,
+                    },
+                ).json()
+
+                items = data if isinstance(data, list) else data.get("orderRows", data.get("OrderRows", []))
+                pagination = data.get("paginationInfo", {}) if isinstance(data, dict) else {}
+
+                if isinstance(items, list):
+                    for item in items:
+                        item["changeDate"] = date_str
+                        yield item
+
+                current_page = pagination.get("currentPage", page)
+                total_pages = pagination.get("totalPages", 1)
+                if current_page >= total_pages:
+                    break
+                page += 1
+
+            current_date += timedelta(days=1)
