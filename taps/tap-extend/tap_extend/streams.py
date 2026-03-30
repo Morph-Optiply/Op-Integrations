@@ -1085,6 +1085,8 @@ def _iter_report_days(stream: "ExtendStream", url: str, list_key: str, start_dat
             pagination = data.get("paginationInfo", {})
 
             for item in items:
+                if not item.get("changeDate"):
+                    item["changeDate"] = date_str + "T00:00:00+00:00"
                 yield item
 
             current_page = int(pagination.get("currentPage") or page)
