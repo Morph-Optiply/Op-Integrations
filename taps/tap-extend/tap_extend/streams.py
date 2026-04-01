@@ -495,7 +495,7 @@ class ProductSupplierAgreementsStream(ExtendStream):
                     logger.warning("PSA: skipping productNumber=%s (%s)", pn, e)
             if len(product_list) < p_count:
                 break
-            p_offset += p_count
+            p_offset += 1
 
         logger.info("ProductSupplierAgreements: per-product iteration done (%d products)", len(seen_products))
 
@@ -615,7 +615,7 @@ class ProductsStream(ExtendStream):
 
             if len(product_list) < page_count:
                 break
-            page_offset += page_count
+            page_offset += 1
 
         logger.info("Products: %d unique products", len(seen))
 
@@ -811,7 +811,7 @@ class CustomerOrdersStream(ExtendStream):
 
             if len(order_list) < page_count:
                 break
-            page_offset += page_count
+            page_offset += 1
 
     def _fetch_order_rows(self, order_number: str) -> list:
         """Fetch orderRows from GET /CustomerOrders/{id}.
