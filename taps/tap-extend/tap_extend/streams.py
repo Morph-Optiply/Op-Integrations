@@ -26,7 +26,6 @@ import base64
 import json
 import logging
 from email.utils import parsedate_to_datetime
-from threading import Lock
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
@@ -60,7 +59,6 @@ class ExtendStream(Stream):
     """Base class for all Extend Commerce streams."""
 
     _session: Optional[requests.Session] = None
-    _rate_limit_lock = Lock()
     _next_request_at = 0.0
 
     @property
@@ -74,6 +72,13 @@ class ExtendStream(Stream):
                 "ExtendBasicAuthorization": f"Basic {credentials}",
                 "Accept": "application/json",
             })
+            # Extend uses header-based auth only. Disable cookies to prevent
+            # accumulation over long syncs (hundreds of pages) which can cause
+            # the server to reject requests with 400.
+            self._session.cookies.set_policy(
+                __import__("http.cookiejar", fromlist=["DefaultCookiePolicy"])
+                .DefaultCookiePolicy(allowed_domains=[])
+            )
         return self._session
 
     @property
@@ -105,13 +110,12 @@ class ExtendStream(Stream):
 
     def _apply_client_throttle(self) -> None:
         min_interval = 1.0 / self.requests_per_second
-        with ExtendStream._rate_limit_lock:
+        now = time.monotonic()
+        sleep_for = ExtendStream._next_request_at - now
+        if sleep_for > 0:
+            time.sleep(sleep_for)
             now = time.monotonic()
-            sleep_for = ExtendStream._next_request_at - now
-            if sleep_for > 0:
-                time.sleep(sleep_for)
-                now = time.monotonic()
-            ExtendStream._next_request_at = max(ExtendStream._next_request_at, now) + min_interval
+        ExtendStream._next_request_at = max(ExtendStream._next_request_at, now) + min_interval
 
     def _delay_from_retry_after(self, retry_after: Optional[str]) -> Optional[float]:
         if not retry_after:
@@ -138,11 +142,22 @@ class ExtendStream(Stream):
     def _defer_next_request(self, delay_seconds: Optional[float]) -> None:
         if not delay_seconds or delay_seconds <= 0:
             return
-        with ExtendStream._rate_limit_lock:
-            ExtendStream._next_request_at = max(
-                ExtendStream._next_request_at,
-                time.monotonic() + delay_seconds,
-            )
+        ExtendStream._next_request_at = max(
+            ExtendStream._next_request_at,
+            time.monotonic() + delay_seconds,
+        )
+
+    def _is_retryable_client_error(self, response: requests.Response) -> bool:
+        """Return True for known transient 4xx responses misclassified by Extend."""
+        if response.status_code != 400:
+            return False
+
+        message = (response.text or "").lower()
+        if "deadlock" in message and "rerun the transaction" in message:
+            return True
+        if "timeout" in message and ("expired" in message or "execution" in message):
+            return True
+        return False
 
     def _is_retryable_client_error(self, response: requests.Response) -> bool:
         """Return True for known transient 4xx responses misclassified by Extend."""
@@ -201,7 +216,15 @@ class ExtendStream(Stream):
         if response.headers.get("x-ratelimit-remaining") == "0":
             self._defer_next_request(self._delay_from_reset_header(response))
 
-        # 4xx (except 429 handled above) are client errors — fail immediately, no retry
+        # 4xx (except 429 handled above) are client errors — log body for diagnosis, then fail
+        if response.status_code >= 400:
+            logger.error(
+                "%s %s -> %d: %s",
+                response.request.method,
+                response.url,
+                response.status_code,
+                response.text[:500],
+            )
         response.raise_for_status()
         return response
 
@@ -566,6 +589,7 @@ class ProductsStream(ExtendStream):
 
         page_offset = 0
         page_count = 100
+        total_rows = 0
 
         while True:
             params: dict[str, Any] = {"pageCount": page_count, "pageOffset": page_offset}
@@ -574,18 +598,31 @@ class ProductsStream(ExtendStream):
             if end_date:
                 params["modifiedDateTo"] = str(end_date)
 
-            product_list = self._request(
-                f"{self.base_url}/Products", params=params
-            ).json()
+            try:
+                product_list = self._request(
+                    f"{self.base_url}/Products", params=params
+                ).json()
+            except requests.exceptions.HTTPError as exc:
+                if exc.response is not None and exc.response.status_code == 400 and page_offset > 0:
+                    logger.warning(
+                        "Products: 400 at pageOffset=%d after %d rows / %d unique products. "
+                        "Yielding partial results. Response: %s",
+                        page_offset, total_rows, len(seen),
+                        exc.response.text[:500],
+                    )
+                    break
+                raise
+
             if not isinstance(product_list, list) or not product_list:
                 break
+
+            total_rows += len(product_list)
 
             for p in product_list:
                 pn = str(p.get("productNumber") or "")
                 if not pn:
                     continue
 
-                # Accumulate per-warehouse stock (list returns one row per warehouse)
                 stock_map.setdefault(pn, []).append({
                     "warehouse": p.get("warehouse") or "",
                     "availableBalance": p.get("availableBalance") or 0,
@@ -617,7 +654,13 @@ class ProductsStream(ExtendStream):
                 break
             page_offset += 1
 
-        logger.info("Products: %d unique products", len(seen))
+            if page_offset % 50 == 0:
+                logger.info(
+                    "Products: page %d — %d rows fetched, %d unique products so far",
+                    page_offset, total_rows, len(seen),
+                )
+
+        logger.info("Products: done — %d rows, %d unique products", total_rows, len(seen))
 
         for pn, record in seen.items():
             record["warehouse_stock"] = json.dumps(stock_map.get(pn, []))
@@ -771,6 +814,7 @@ class CustomerOrdersStream(ExtendStream):
 
         page_offset = 0
         page_count = 100
+        total_orders = 0
 
         while True:
             params: dict[str, Any] = {
@@ -781,13 +825,26 @@ class CustomerOrdersStream(ExtendStream):
             if end_date:
                 params["changeDateTo"] = str(end_date)
 
-            order_list = self._request(
-                f"{self.base_url}/CustomerOrders",
-                params=params,
-            ).json()
+            try:
+                order_list = self._request(
+                    f"{self.base_url}/CustomerOrders",
+                    params=params,
+                ).json()
+            except requests.exceptions.HTTPError as exc:
+                if exc.response is not None and exc.response.status_code == 400 and page_offset > 0:
+                    logger.warning(
+                        "CustomerOrders: 400 at pageOffset=%d after %d orders. "
+                        "Yielding partial results. Response: %s",
+                        page_offset, total_orders,
+                        exc.response.text[:500],
+                    )
+                    return
+                raise
 
             if not isinstance(order_list, list) or not order_list:
                 break
+
+            total_orders += len(order_list)
 
             for o in order_list:
                 order_number = str(o.get("orderNumber") or "")
@@ -812,6 +869,14 @@ class CustomerOrdersStream(ExtendStream):
             if len(order_list) < page_count:
                 break
             page_offset += 1
+
+            if page_offset % 50 == 0:
+                logger.info(
+                    "CustomerOrders: page %d — %d orders fetched so far",
+                    page_offset, total_orders,
+                )
+
+        logger.info("CustomerOrders: done — %d orders", total_orders)
 
     def _fetch_order_rows(self, order_number: str) -> list:
         """Fetch orderRows from GET /CustomerOrders/{id}.

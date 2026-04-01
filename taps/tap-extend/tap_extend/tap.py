@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, List
 
 from hotglue_singer_sdk import Tap
 from hotglue_singer_sdk import typing as th
@@ -103,6 +103,50 @@ class TapExtend(Tap):
         if isinstance(wc, str):
             return [c.strip() for c in wc.split(",") if c.strip()] or None
         return wc or None
+
+    def load_state(self, state: dict[str, Any]) -> None:
+        """Normalize legacy scalar bookmarks before delegating to the SDK."""
+        super().load_state(self._normalize_legacy_bookmarks(state))
+
+    def _normalize_legacy_bookmarks(self, state: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+
+        bookmarks = state.get("bookmarks")
+        if not isinstance(bookmarks, dict):
+            return state
+
+        normalized_state = dict(state)
+        normalized_bookmarks: dict[str, dict[str, Any]] = {}
+
+        for stream_name, stream_state in bookmarks.items():
+            if isinstance(stream_state, dict):
+                normalized_bookmarks[stream_name] = stream_state
+                continue
+
+            stream = self.streams.get(stream_name)
+            replication_key = getattr(stream, "replication_key", None) if stream else None
+
+            if replication_key and stream_state not in (None, ""):
+                self.logger.warning(
+                    "Coercing legacy scalar bookmark for stream '%s' into Singer state.",
+                    stream_name,
+                )
+                normalized_bookmarks[stream_name] = {
+                    "replication_key": replication_key,
+                    "replication_key_value": stream_state,
+                }
+                continue
+
+            self.logger.warning(
+                "Ignoring malformed bookmark for stream '%s': expected an object, got %s.",
+                stream_name,
+                type(stream_state).__name__,
+            )
+            normalized_bookmarks[stream_name] = {}
+
+        normalized_state["bookmarks"] = normalized_bookmarks
+        return normalized_state
 
     def discover_streams(self) -> List:
         """Return stream instances."""
