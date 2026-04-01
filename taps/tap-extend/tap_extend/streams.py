@@ -159,6 +159,18 @@ class ExtendStream(Stream):
             return True
         return False
 
+    def _is_retryable_client_error(self, response: requests.Response) -> bool:
+        """Return True for known transient 4xx responses misclassified by Extend."""
+        if response.status_code != 400:
+            return False
+
+        message = (response.text or "").lower()
+        if "deadlock" in message and "rerun the transaction" in message:
+            return True
+        if "timeout" in message and ("expired" in message or "execution" in message):
+            return True
+        return False
+
     @backoff.on_exception(
         backoff.expo,
         (requests.exceptions.ConnectionError, requests.exceptions.Timeout, _RetryableError),
@@ -1310,3 +1322,4 @@ class ReportsOrderRowsStream(ExtendStream):
                 "expectedDeliveryDate": item.get("expectedDeliveryDate"),
                 "changeDate": item.get("changeDate"),
             }
+
