@@ -94,6 +94,15 @@ class ExtendStream(Stream):
             requests_per_second = 4.0
         return max(requests_per_second, 0.1)
 
+    @property
+    def request_timeout(self) -> float:
+        """Per-request timeout in seconds. Default 120, configurable via request_timeout_seconds."""
+        raw = self.config.get("request_timeout_seconds", 120)
+        try:
+            return max(float(raw), 10.0)
+        except (TypeError, ValueError):
+            return 120.0
+
     def _apply_client_throttle(self) -> None:
         min_interval = 1.0 / self.requests_per_second
         with ExtendStream._rate_limit_lock:
@@ -135,16 +144,29 @@ class ExtendStream(Stream):
                 time.monotonic() + delay_seconds,
             )
 
+    def _is_retryable_client_error(self, response: requests.Response) -> bool:
+        """Return True for known transient 4xx responses misclassified by Extend."""
+        if response.status_code != 400:
+            return False
+
+        message = (response.text or "").lower()
+        if "deadlock" in message and "rerun the transaction" in message:
+            return True
+        if "timeout" in message and ("expired" in message or "execution" in message):
+            return True
+        return False
+
     @backoff.on_exception(
         backoff.expo,
         (requests.exceptions.ConnectionError, requests.exceptions.Timeout, _RetryableError),
-        max_tries=5,
+        max_tries=8,
         factor=2,
+        jitter=backoff.full_jitter,
     )
     def _request(self, url: str, params: Optional[dict] = None) -> requests.Response:
-        """GET with retry/backoff.  Only retries on 429, 5xx, and connection errors."""
+        """GET with retry/backoff.  Only retries on 429, 5xx, connection errors, and transient 400s."""
         self._apply_client_throttle()
-        response = self.session.get(url, params=params, timeout=120)
+        response = self.session.get(url, params=params, timeout=self.request_timeout)
 
         if response.status_code == 401:
             raise InvalidCredentialsError(
@@ -165,6 +187,15 @@ class ExtendStream(Stream):
         if response.status_code >= 500:
             raise _RetryableError(
                 f"Server error ({response.status_code}): {response.text[:300]}"
+            )
+        if self._is_retryable_client_error(response):
+            logger.warning(
+                "Retrying transient Extend client error (%s): %s",
+                response.status_code,
+                response.text[:300],
+            )
+            raise _RetryableError(
+                f"Transient client error ({response.status_code}): {response.text[:300]}"
             )
 
         if response.headers.get("x-ratelimit-remaining") == "0":
@@ -1031,9 +1062,15 @@ def _iter_report_days(stream: "ExtendStream", url: str, list_key: str, start_dat
     else:
         stop = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
+    total_days = (stop - current).days + 1
+    day_num = 0
+
     while current <= stop:
         date_str = current.strftime("%Y-%m-%d")
+        day_num += 1
         page = 1
+        day_records = 0
+
         while True:
             params = {
                 "changeDate": date_str,
@@ -1066,8 +1103,11 @@ def _iter_report_days(stream: "ExtendStream", url: str, list_key: str, start_dat
 
             items = data.get(list_key, [])
             pagination = data.get("paginationInfo", {})
+            day_records += len(items)
 
             for item in items:
+                if not item.get("changeDate"):
+                    item["changeDate"] = date_str + "T00:00:00+00:00"
                 yield item
 
             current_page = int(pagination.get("currentPage") or page)
@@ -1076,6 +1116,10 @@ def _iter_report_days(stream: "ExtendStream", url: str, list_key: str, start_dat
                 break
             page += 1
 
+        logger.info(
+            "Reports %s day %d/%d (%s): %d records across %d pages",
+            list_key, day_num, total_days, date_str, day_records, page,
+        )
         current += timedelta(days=1)
 
 
@@ -1213,3 +1257,4 @@ class ReportsOrderRowsStream(ExtendStream):
                 "expectedDeliveryDate": item.get("expectedDeliveryDate"),
                 "changeDate": item.get("changeDate"),
             }
+
