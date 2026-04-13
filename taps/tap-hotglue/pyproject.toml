@@ -23,3 +23,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 tap-hotglue = 'tap_hotglue.tap:TapHotglue.cli'
+tap-hotglue-api = 'tap_hotglue.tap:TapHotglue.cli'
