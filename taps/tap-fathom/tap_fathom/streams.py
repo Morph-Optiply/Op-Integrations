@@ -270,19 +270,18 @@ class RecordingTranscriptsStream(FathomStream):
     name = "recording_transcripts"
     path = "/recordings/{recording_id}/transcript"
     parent_stream_type = MeetingsStream
-    primary_keys = ["transcript_line_id"]
-    records_jsonpath = "$.transcript[*]"
+    primary_keys = ["recording_id"]
+    records_jsonpath = "$"
 
     schema = {
         "type": "object",
         "additionalProperties": True,
         "properties": {
-            "transcript_line_id": {"type": nullable("string")},
             "recording_id": {"type": nullable("integer")},
-            "line_index": {"type": nullable("integer")},
-            "timestamp": {"type": nullable("string")},
-            "text": {"type": nullable("string")},
-            "speaker": speaker_schema,
+            "transcript_line_count": {"type": nullable("integer")},
+            "transcript_text": {"type": nullable("string")},
+            "transcript_json": {"type": nullable("string")},
+            "transcript": array_of(transcript_line_schema),
         },
     }
 
@@ -304,25 +303,47 @@ class RecordingTranscriptsStream(FathomStream):
         return {}
 
     def parse_response(self, response):
-        """Parse transcript lines and add stable line indexes."""
+        """Parse a transcript response into one Singer record per recording."""
         if response.status_code in (404, 204):
             return
         payload = response.json()
         transcript = payload.get("transcript")
         if not isinstance(transcript, list):
             return
-        for index, line in enumerate(transcript):
-            if isinstance(line, dict):
-                row = dict(line)
-                row["line_index"] = index
-                yield row
+
+        lines = [line for line in transcript if isinstance(line, dict)]
+        yield {
+            "transcript": lines,
+            "transcript_line_count": len(lines),
+            "transcript_text": self._transcript_text(lines),
+            "transcript_json": json.dumps(lines, sort_keys=True),
+        }
 
     def post_process(self, row: dict, context: Context | None = None) -> dict | None:
-        """Attach parent recording_id and a deterministic line id."""
+        """Attach parent recording_id."""
         recording_id = context.get("recording_id") if context else None
         row["recording_id"] = recording_id
-        row["transcript_line_id"] = f"{recording_id}:{row.get('line_index', 0)}"
         return row
+
+    @staticmethod
+    def _transcript_text(lines: list[dict]) -> str:
+        """Flatten transcript lines into readable text for mapping."""
+        rendered: list[str] = []
+        for line in lines:
+            text = line.get("text")
+            if not text:
+                continue
+
+            speaker = line.get("speaker")
+            speaker_name = None
+            if isinstance(speaker, dict):
+                speaker_name = speaker.get("display_name")
+
+            timestamp = line.get("timestamp")
+            prefix_parts = [part for part in (timestamp, speaker_name) if part]
+            prefix = " ".join(str(part) for part in prefix_parts)
+            rendered.append(f"{prefix}: {text}" if prefix else str(text))
+        return "\n".join(rendered)
 
 
 class TeamsStream(FathomStream):

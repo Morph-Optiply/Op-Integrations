@@ -6,7 +6,7 @@ Fathom External API Singer tap for Optiply, built with `hotglue_singer_sdk`.
 
 - `meetings`: cursor-paginated, incremental on `created_at` via `created_after`.
 - `recording_summaries`: child stream from `meetings`, disabled unless `sync_recording_summaries=true`.
-- `recording_transcripts`: child stream from `meetings`, disabled unless `sync_recording_transcripts=true`.
+- `recording_transcripts`: child stream from `meetings`, disabled unless `sync_recording_transcripts=true`; emits one record per recording with `transcript_text`, `transcript_json`, and the raw `transcript` line array.
 - `teams`: cursor-paginated full table.
 - `team_members`: cursor-paginated full table, optionally filtered by `team_member_team`.
 
