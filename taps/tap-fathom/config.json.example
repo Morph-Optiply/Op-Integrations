@@ -1,0 +1,14 @@
+{
+  "api_url": "https://api.fathom.ai/external/v1",
+  "api_key": "YOUR_FATHOM_API_KEY",
+  "start_date": "2000-01-01T00:00:00Z",
+  "page_size": 100,
+  "rate_limit_per_minute": 50,
+  "calendar_invitees_domains_type": "all",
+  "include_action_items": false,
+  "include_crm_matches": false,
+  "include_summary": false,
+  "include_transcript": false,
+  "sync_recording_summaries": false,
+  "sync_recording_transcripts": false
+}

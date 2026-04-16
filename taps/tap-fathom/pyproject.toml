@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tap-fathom"
+version = "0.1.0"
+description = "Fathom tap for Optiply using hotglue_singer_sdk"
+authors = [{ name = "Morph", email = "morph@optiply.com" }]
+requires-python = ">=3.9,<3.11"
+dependencies = [
+    "poetry-core",
+    "hotglue-singer-sdk",
+    "backoff>=1.8.0,<2.0",
+    "requests>=2.31.0",
+]
+
+[project.scripts]
+tap = "tap_fathom.tap:TapFathom.cli"
+tap-fathom = "tap_fathom.tap:TapFathom.cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tap_fathom*"]
