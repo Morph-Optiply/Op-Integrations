@@ -281,7 +281,6 @@ class RecordingTranscriptsStream(FathomStream):
             "transcript_line_count": {"type": nullable("integer")},
             "transcript_text": {"type": nullable("string")},
             "transcript_json": {"type": nullable("string")},
-            "transcript": array_of(transcript_line_schema),
         },
     }
 
@@ -313,10 +312,9 @@ class RecordingTranscriptsStream(FathomStream):
 
         lines = [line for line in transcript if isinstance(line, dict)]
         yield {
-            "transcript": lines,
             "transcript_line_count": len(lines),
             "transcript_text": self._transcript_text(lines),
-            "transcript_json": json.dumps(lines, sort_keys=True),
+            "transcript_json": json.dumps(lines, sort_keys=True, ensure_ascii=False),
         }
 
     def post_process(self, row: dict, context: Context | None = None) -> dict | None:
@@ -327,7 +325,7 @@ class RecordingTranscriptsStream(FathomStream):
 
     @staticmethod
     def _transcript_text(lines: list[dict]) -> str:
-        """Flatten transcript lines into readable text for mapping."""
+        """Flatten transcript lines into CSV-safe readable text for mapping."""
         rendered: list[str] = []
         for line in lines:
             text = line.get("text")
@@ -342,8 +340,14 @@ class RecordingTranscriptsStream(FathomStream):
             timestamp = line.get("timestamp")
             prefix_parts = [part for part in (timestamp, speaker_name) if part]
             prefix = " ".join(str(part) for part in prefix_parts)
-            rendered.append(f"{prefix}: {text}" if prefix else str(text))
-        return "\n".join(rendered)
+            clean_text = RecordingTranscriptsStream._csv_safe_text(str(text))
+            rendered.append(f"{prefix}: {clean_text}" if prefix else clean_text)
+        return " | ".join(rendered)
+
+    @staticmethod
+    def _csv_safe_text(value: str) -> str:
+        """Remove physical line breaks and control characters from text fields."""
+        return " ".join(value.split())
 
 
 class TeamsStream(FathomStream):

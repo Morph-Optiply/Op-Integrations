@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tap-fathom"
-version = "0.1.1"
+version = "0.1.2"
 description = "Fathom tap for Optiply using hotglue_singer_sdk"
 authors = [{ name = "Morph", email = "morph@optiply.com" }]
 requires-python = ">=3.9,<3.11"
