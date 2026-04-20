@@ -208,6 +208,74 @@ class FathomStream(RESTStream):
 
         yield from extract_jsonpath(self.records_jsonpath, input=payload)
 
+    def post_process(self, row: dict, context: Context | None = None) -> dict | None:
+        """Filter already-bookmarked incremental records."""
+        if self._record_is_after_bookmark(row, context):
+            return row
+        return None
+
+    def _record_is_after_bookmark(
+        self,
+        row: dict,
+        context: Context | None = None,
+    ) -> bool:
+        """Return False when an API page repeats the bookmarked boundary record."""
+        replication_key = getattr(self, "replication_key", None)
+        if not replication_key:
+            return True
+
+        start = self._starting_datetime(context)
+        if start is None:
+            return True
+
+        value = row.get(replication_key)
+        if value in (None, ""):
+            self.logger.warning(
+                "Keeping %s record without replication key value '%s'.",
+                self.name,
+                replication_key,
+            )
+            return True
+
+        record_time = self._parse_datetime(value)
+        start_time = self._parse_datetime(start)
+        if record_time is None or start_time is None:
+            return str(value) > self._format_datetime(start)
+
+        return record_time > start_time
+
+    def _starting_datetime(self, context: Context | None = None) -> datetime | None:
+        """Return the SDK starting marker, falling back to loaded Singer state."""
+        start_value = self.get_starting_replication_key_value(context)
+        if start_value is None:
+            state = self.get_context_state(context)
+            if state.get("replication_key") == getattr(self, "replication_key", None):
+                start_value = state.get("replication_key_value")
+
+        if start_value is None:
+            return None
+
+        return self._parse_datetime(start_value)
+
+    def _parse_datetime(self, value) -> datetime | None:
+        """Parse Fathom/Singer datetime values into timezone-aware datetimes."""
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str):
+            normalized = value.strip()
+            if normalized.endswith("Z"):
+                normalized = f"{normalized[:-1]}+00:00"
+            try:
+                parsed = datetime.fromisoformat(normalized)
+            except ValueError:
+                return None
+        else:
+            return None
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
     def _config_start_date(self) -> str:
         """Return config start date as an ISO timestamp string."""
         configured = self.config.get("start_date") or "2000-01-01T00:00:00Z"
@@ -240,7 +308,7 @@ class FathomStream(RESTStream):
         """Write HotGlue-compatible state without partition noise."""
         tap_state = self.tap_state
         if tap_state and tap_state.get("bookmarks"):
-            for stream_name in tap_state["bookmarks"]:
-                if tap_state["bookmarks"][stream_name].get("partitions"):
-                    tap_state["bookmarks"][stream_name] = {"partitions": []}
+            for stream_state in tap_state["bookmarks"].values():
+                if isinstance(stream_state, dict):
+                    stream_state.pop("partitions", None)
         singer.write_message(StateMessage(value=tap_state))

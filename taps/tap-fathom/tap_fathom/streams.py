@@ -160,7 +160,7 @@ class MeetingsStream(FathomStream):
         """Return meeting list filters and cursor params."""
         params = super().get_url_params(context, next_page_token)
 
-        start = self.get_starting_timestamp(context)
+        start = self._starting_datetime(context)
         params["created_after"] = (
             self._format_datetime(start) if start else self._config_start_date()
         )
@@ -203,7 +203,7 @@ class MeetingsStream(FathomStream):
             return None
         if isinstance(recording_id, str) and recording_id.isdigit():
             row["recording_id"] = int(recording_id)
-        return row
+        return super().post_process(row, context)
 
 
 class RecordingSummariesStream(FathomStream):
@@ -356,6 +356,7 @@ class TeamsStream(FathomStream):
     name = "teams"
     path = "/teams"
     primary_keys = ["name"]
+    replication_key = "created_at"
     records_jsonpath = "$.items[*]"
 
     schema = {
@@ -374,6 +375,7 @@ class TeamMembersStream(FathomStream):
     name = "team_members"
     path = "/team_members"
     primary_keys = ["email"]
+    replication_key = "created_at"
     records_jsonpath = "$.items[*]"
 
     schema = {
