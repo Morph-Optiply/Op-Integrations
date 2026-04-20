@@ -1,5 +1,6 @@
 """Regression tests for Fathom tap state and replication behavior."""
 
+import copy
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,24 @@ class TapFathomReplicationTests(unittest.TestCase):
         self.assertEqual(tap.streams["meetings"].replication_key, "created_at")
         self.assertEqual(tap.streams["teams"].replication_key, "created_at")
         self.assertEqual(tap.streams["team_members"].replication_key, "created_at")
+
+    def test_stale_catalog_cannot_remove_main_stream_replication_keys(self):
+        discovered = TapFathom(config=minimal_config()).catalog_dict
+        stale_catalog = copy.deepcopy(discovered)
+
+        for stream in stale_catalog["streams"]:
+            if stream["tap_stream_id"] in {"meetings", "teams", "team_members"}:
+                stream.pop("replication_key", None)
+                stream["replication_method"] = "FULL_TABLE"
+
+        tap = TapFathom(config=minimal_config(), catalog=stale_catalog)
+
+        self.assertEqual(tap.streams["meetings"].replication_key, "created_at")
+        self.assertEqual(tap.streams["meetings"].replication_method, "INCREMENTAL")
+        self.assertEqual(tap.streams["teams"].replication_key, "created_at")
+        self.assertEqual(tap.streams["teams"].replication_method, "INCREMENTAL")
+        self.assertEqual(tap.streams["team_members"].replication_key, "created_at")
+        self.assertEqual(tap.streams["team_members"].replication_method, "INCREMENTAL")
 
     def test_load_state_coerces_legacy_scalar_bookmarks(self):
         tap = TapFathom(
