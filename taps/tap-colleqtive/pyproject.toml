@@ -1,0 +1,21 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "tap-colleqtive"
+version = "0.1.0"
+description = "Singer tap for the Colleqtive public API, built with the hotglue Singer SDK"
+authors = ["Optiply <dev@optiply.com>"]
+license = "Apache-2.0"
+packages = [{ include = "tap_colleqtive" }]
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.12"
+hotglue-singer-sdk = ">=1.0.0"
+requests = ">=2.28"
+backoff = ">=1.8"
+
+[tool.poetry.scripts]
+tap-colleqtive = "tap_colleqtive.tap:TapColleqtive.cli"
+tap-collective = "tap_colleqtive.tap:TapColleqtive.cli"

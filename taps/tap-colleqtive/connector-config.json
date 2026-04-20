@@ -1,0 +1,47 @@
+{
+  "tap": "colleqtive",
+  "domain": "colleqtive.net",
+  "install_uri": "git+https://github.com/Morph-Optiply/Op-Integrations.git@feat/tap-colleqtive#subdirectory=taps/tap-colleqtive",
+  "type": "api",
+  "icon": "https://colleqtive.com/_next/static/media/logo.d98fc19f.svg",
+  "label": "Colleqtive",
+  "connect_ui_params": {
+    "client_id": {
+      "label": "Client ID",
+      "description": "OAuth2 client ID for Colleqtive.",
+      "required": true
+    },
+    "client_secret": {
+      "label": "Client Secret",
+      "description": "OAuth2 client secret for Colleqtive.",
+      "type": "password",
+      "required": true
+    },
+    "scope": {
+      "label": "Scope",
+      "description": "OAuth2 scope for the Colleqtive API. Example: api://3628acdd-fd33-402b-8583-42363809aa4e.saascolleqtive.onmicrosoft.com/.default",
+      "required": true
+    },
+    "store_number": {
+      "label": "Store Number",
+      "description": "Optional store_number filter for stock, order, and buy-order streams. Leave empty to sync all stores.",
+      "type": "text",
+      "required": false
+    }
+  },
+  "config": {
+    "api_url": "https://bbq-test.colleqtive.net",
+    "token_url": "https://login.microsoftonline.com/ca47d553-3e2b-42f0-a655-7ec6f6b466e4/oauth2/v2.0/token",
+    "start_date": "2010-01-01T00:00:00.000Z",
+    "page_size": 200,
+    "requests_per_second": 4,
+    "request_timeout_seconds": 120,
+    "store_number": null
+  },
+  "connector_props": {
+    "singer_sdk": true
+  },
+  "isForked": true,
+  "validation_supported": false,
+  "default_import_scheduler": "30 4-22 * * *"
+}

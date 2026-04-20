@@ -1,0 +1,11 @@
+{
+  "api_url": "https://bbq-test.colleqtive.net",
+  "token_url": "https://login.microsoftonline.com/ca47d553-3e2b-42f0-a655-7ec6f6b466e4/oauth2/v2.0/token",
+  "client_id": "your-client-id",
+  "client_secret": "your-client-secret",
+  "scope": "api://your-client-id.saascolleqtive.onmicrosoft.com/.default",
+  "start_date": "2024-01-01T00:00:00Z",
+  "page_size": 200,
+  "requests_per_second": 4,
+  "store_number": null
+}
