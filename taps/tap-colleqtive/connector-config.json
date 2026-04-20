@@ -1,7 +1,7 @@
 {
   "tap": "colleqtive",
   "domain": "colleqtive.net",
-  "install_uri": "git+https://github.com/Morph-Optiply/Op-Integrations.git@feat/tap-colleqtive#subdirectory=taps/tap-colleqtive",
+  "install_uri": "git+https://github.com/Morph-Optiply/Op-Integrations.git#subdirectory=taps/tap-colleqtive",
   "type": "api",
   "icon": "https://colleqtive.com/_next/static/media/logo.d98fc19f.svg",
   "label": "Colleqtive",
