@@ -208,6 +208,16 @@ class FathomStream(RESTStream):
 
         yield from extract_jsonpath(self.records_jsonpath, input=payload)
 
+    def apply_catalog(self, catalog) -> None:
+        """Apply selection while keeping tap-owned replication keys current."""
+        configured_replication_key = getattr(type(self), "replication_key", None)
+        super().apply_catalog(catalog)
+
+        if configured_replication_key:
+            self.replication_key = configured_replication_key
+            if self.forced_replication_method == "FULL_TABLE":
+                self.forced_replication_method = None
+
     def post_process(self, row: dict, context: Context | None = None) -> dict | None:
         """Filter already-bookmarked incremental records."""
         if self._record_is_after_bookmark(row, context):
