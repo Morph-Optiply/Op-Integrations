@@ -210,12 +210,23 @@ class FathomStream(RESTStream):
 
     def apply_catalog(self, catalog) -> None:
         """Apply selection while keeping tap-owned replication keys current."""
-        configured_replication_key = getattr(type(self), "replication_key", None)
+        configured_replication_key = type(self).__dict__.get("replication_key")
         super().apply_catalog(catalog)
 
         if configured_replication_key:
             self.replication_key = configured_replication_key
             if self.forced_replication_method == "FULL_TABLE":
+                self.forced_replication_method = None
+            return
+
+        if getattr(self, "replication_key", None):
+            self.logger.warning(
+                "Ignoring catalog replication key '%s' for non-incremental stream '%s'.",
+                self.replication_key,
+                self.name,
+            )
+            self.replication_key = None
+            if self.forced_replication_method == "INCREMENTAL":
                 self.forced_replication_method = None
 
     def post_process(self, row: dict, context: Context | None = None) -> dict | None:

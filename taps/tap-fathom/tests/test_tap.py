@@ -41,6 +41,36 @@ class TapFathomReplicationTests(unittest.TestCase):
         self.assertEqual(tap.streams["team_members"].replication_key, "created_at")
         self.assertEqual(tap.streams["team_members"].replication_method, "INCREMENTAL")
 
+    def test_stale_catalog_cannot_make_child_streams_incremental(self):
+        config = {
+            **minimal_config(),
+            "sync_recording_summaries": True,
+            "sync_recording_transcripts": True,
+        }
+        discovered = TapFathom(config=config).catalog_dict
+        stale_catalog = copy.deepcopy(discovered)
+
+        for stream in stale_catalog["streams"]:
+            if stream["tap_stream_id"] in {
+                "recording_summaries",
+                "recording_transcripts",
+            }:
+                stream["replication_key"] = "created_at"
+                stream["replication_method"] = "INCREMENTAL"
+
+        tap = TapFathom(config=config, catalog=stale_catalog)
+
+        self.assertIsNone(tap.streams["recording_summaries"].replication_key)
+        self.assertEqual(
+            tap.streams["recording_summaries"].replication_method,
+            "FULL_TABLE",
+        )
+        self.assertIsNone(tap.streams["recording_transcripts"].replication_key)
+        self.assertEqual(
+            tap.streams["recording_transcripts"].replication_method,
+            "FULL_TABLE",
+        )
+
     def test_load_state_coerces_legacy_scalar_bookmarks(self):
         tap = TapFathom(
             config=minimal_config(),
